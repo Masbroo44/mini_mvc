@@ -6,6 +6,29 @@ namespace Mini\Core;
 // Déclare une classe abstraite de contrôleur de base
 class Controller
 {
+    /**
+     * Vérifie si l'utilisateur connecté est un administrateur
+     */
+    protected function isAdmin(): bool
+    {
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+        
+        return isset($_SESSION['user_role']) && $_SESSION['user_role'] === 'admin';
+    }
+
+    /**
+     * Vérifie si l'utilisateur est admin et redirige si nécessaire
+     */
+    protected function requireAdmin(): void
+    {
+        if (!$this->isAdmin()) {
+            header('Location: /');
+            exit;
+        }
+    }
+
     // Méthode utilitaire pour rendre une vue avec des paramètres
     protected function render(string $view, array $params = []): void
     {

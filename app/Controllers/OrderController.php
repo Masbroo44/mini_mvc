@@ -15,14 +15,29 @@ final class OrderController extends Controller
      */
     public function listByUser(): void
     {
-        $user_id = $_GET['user_id'] ?? 1; // Par défaut user_id = 1 pour la démo
+        // Utilise le user_id de la session si l'utilisateur est connecté, sinon celui de l'URL, sinon 1 par défaut
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+        
+        $user_id = $_SESSION['user_id'] ?? $_GET['user_id'] ?? 1;
         
         $orders = Order::getByUserId($user_id);
+        
+        $message = null;
+        $messageType = null;
+        
+        if (isset($_GET['success']) && $_GET['success'] === 'created') {
+            $message = 'Commande créée avec succès !';
+            $messageType = 'success';
+        }
         
         $this->render('order/list', params: [
             'title' => 'Mes commandes',
             'orders' => $orders,
-            'user_id' => $user_id
+            'user_id' => $user_id,
+            'message' => $message,
+            'messageType' => $messageType
         ]);
     }
 
@@ -83,8 +98,16 @@ final class OrderController extends Controller
     public function create(): void
     {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-            header('Location: /cart?user_id=' . ($_GET['user_id'] ?? 1));
+            if (session_status() === PHP_SESSION_NONE) {
+                session_start();
+            }
+            $user_id = $_SESSION['user_id'] ?? $_GET['user_id'] ?? 1;
+            header('Location: /cart?user_id=' . $user_id);
             return;
+        }
+        
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
         }
         
         $input = json_decode(file_get_contents('php://input'), true);
@@ -92,7 +115,8 @@ final class OrderController extends Controller
             $input = $_POST;
         }
         
-        $user_id = $input['user_id'] ?? $_GET['user_id'] ?? 1;
+        // Utilise le user_id de la session si connecté, sinon celui du formulaire, sinon 1
+        $user_id = $_SESSION['user_id'] ?? $input['user_id'] ?? $_GET['user_id'] ?? 1;
         
         // Vérifie que le panier n'est pas vide
         $cartItems = Cart::getByUserId($user_id);
@@ -105,7 +129,8 @@ final class OrderController extends Controller
         $orderId = Order::createFromCart($user_id);
         
         if ($orderId) {
-            header('Location: /orders/show?id=' . $orderId . '&success=created');
+            // Redirige vers la liste des commandes avec un message de succès
+            header('Location: /orders?user_id=' . $user_id . '&success=created');
         } else {
             header('Location: /cart?user_id=' . $user_id . '&error=create_failed');
         }

@@ -7,6 +7,16 @@
         </a>
     </div>
     
+    <!-- Message de succès/erreur -->
+    <?php if (isset($message) && $message): ?>
+        <div style="padding: 15px; margin-bottom: 20px; border-radius: 4px; 
+                    background-color: <?= $messageType === 'success' ? '#d4edda' : '#f8d7da' ?>; 
+                    color: <?= $messageType === 'success' ? '#155724' : '#721c24' ?>; 
+                    border: 1px solid <?= $messageType === 'success' ? '#c3e6cb' : '#f5c6cb' ?>;">
+            <?= $messageType === 'success' ? '✅ ' : '❌ ' ?><?= htmlspecialchars($message) ?>
+        </div>
+    <?php endif; ?>
+    
     <?php if (empty($orders)): ?>
         <div style="text-align: center; padding: 60px; background-color: #f8f9fa; border-radius: 8px;">
             <div style="font-size: 64px; margin-bottom: 20px;">📋</div>

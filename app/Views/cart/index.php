@@ -114,7 +114,6 @@
                 <!-- Bouton vider le panier -->
                 <div style="margin-top: 20px;">
                     <form method="POST" action="/cart/clear">
-                        <input type="hidden" name="user_id" value="<?= htmlspecialchars($user_id) ?>">
                         <button 
                             type="submit" 
                             style="padding: 10px 20px; background-color: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;"
@@ -148,7 +147,6 @@
                     </div>
                     
                     <form method="POST" action="/orders/create">
-                        <input type="hidden" name="user_id" value="<?= htmlspecialchars($user_id) ?>">
                         <button 
                             type="submit" 
                             style="width: 100%; padding: 15px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 18px; font-weight: bold;"

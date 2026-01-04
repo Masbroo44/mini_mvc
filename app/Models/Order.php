@@ -13,72 +13,26 @@ class Order
     private $user_id;
     private $statut;
     private $total;
-    private $created_at;
-    private $updated_at;
+    private $date;
 
     // =====================
     // Getters / Setters
     // =====================
 
-    public function getId()
-    {
-        return $this->id;
-    }
+    public function getId() { return $this->id; }
+    public function setId($id) { $this->id = $id; }
 
-    public function setId($id)
-    {
-        $this->id = $id;
-    }
+    public function getUserId() { return $this->user_id; }
+    public function setUserId($user_id) { $this->user_id = $user_id; }
 
-    public function getUserId()
-    {
-        return $this->user_id;
-    }
+    public function getStatut() { return $this->statut; }
+    public function setStatut($statut) { $this->statut = $statut; }
 
-    public function setUserId($user_id)
-    {
-        $this->user_id = $user_id;
-    }
+    public function getTotal() { return $this->total; }
+    public function setTotal($total) { $this->total = $total; }
 
-    public function getStatut()
-    {
-        return $this->statut;
-    }
-
-    public function setStatut($statut)
-    {
-        $this->statut = $statut;
-    }
-
-    public function getTotal()
-    {
-        return $this->total;
-    }
-
-    public function setTotal($total)
-    {
-        $this->total = $total;
-    }
-
-    public function getCreatedAt()
-    {
-        return $this->created_at;
-    }
-
-    public function setCreatedAt($created_at)
-    {
-        $this->created_at = $created_at;
-    }
-
-    public function getUpdatedAt()
-    {
-        return $this->updated_at;
-    }
-
-    public function setUpdatedAt($updated_at)
-    {
-        $this->updated_at = $updated_at;
-    }
+    public function getDate() { return $this->date; }
+    public function setDate($date) { $this->date = $date; }
 
     // =====================
     // Méthodes CRUD
@@ -86,68 +40,64 @@ class Order
 
     /**
      * Récupère toutes les commandes d'un utilisateur
-     * @param int $user_id
-     * @return array
      */
     public static function getByUserId($user_id)
     {
         $pdo = Database::getPDO();
+        // Alias SQL : date AS created_at pour satisfaire la vue
         $stmt = $pdo->prepare("
-            SELECT * FROM commande 
+            SELECT id, user_id, statut, total, date AS created_at 
+            FROM commande 
             WHERE user_id = ? 
-            ORDER BY created_at DESC
+            ORDER BY date DESC
         ");
         $stmt->execute([$user_id]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     /**
-     * Récupère toutes les commandes validées
-     * @return array
+     * Récupère toutes les commandes validées (Admin)
      */
     public static function getValidatedOrders()
     {
         $pdo = Database::getPDO();
         $stmt = $pdo->query("
-            SELECT c.*, u.nom as user_nom, u.email as user_email
+            SELECT c.id, c.user_id, c.statut, c.total, c.date AS created_at, 
+                   u.nom as user_nom, u.email as user_email
             FROM commande c
-            INNER JOIN user u ON c.user_id = u.id
+            INNER JOIN `user` u ON c.user_id = u.id
             WHERE c.statut = 'validee'
-            ORDER BY c.created_at DESC
+            ORDER BY c.date DESC
         ");
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     /**
      * Récupère une commande par son ID avec ses produits
-     * @param int $id
-     * @return array|null
      */
     public static function findByIdWithProducts($id)
     {
         $pdo = Database::getPDO();
         
-        // Récupère la commande
         $stmt = $pdo->prepare("
-            SELECT c.*, u.nom as user_nom, u.email as user_email
+            SELECT c.id, c.user_id, c.statut, c.total, c.date AS created_at, 
+                   u.nom as user_nom, u.email as user_email
             FROM commande c
-            INNER JOIN user u ON c.user_id = u.id
+            INNER JOIN `user` u ON c.user_id = u.id
             WHERE c.id = ?
         ");
         $stmt->execute([$id]);
         $order = $stmt->fetch(PDO::FETCH_ASSOC);
         
-        if (!$order) {
-            return null;
-        }
+        if (!$order) return null;
         
-        // Récupère les produits de la commande
+        // Récupération des articles via la table order_item
         $stmt = $pdo->prepare("
-            SELECT cp.*, p.nom as product_nom, p.image_url, cat.nom as categorie_nom
-            FROM commande_produit cp
-            INNER JOIN produit p ON cp.product_id = p.id
+            SELECT oi.*, p.nom as product_nom, p.image_url, cat.nom as categorie_nom
+            FROM order_item oi
+            INNER JOIN produit p ON oi.produit_id = p.id
             LEFT JOIN categorie cat ON p.categorie_id = cat.id
-            WHERE cp.commande_id = ?
+            WHERE oi.commande_id = ?
         ");
         $stmt->execute([$id]);
         $order['products'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -156,34 +106,28 @@ class Order
     }
 
     /**
-     * Crée une nouvelle commande à partir du panier
-     * @param int $user_id
-     * @return int|false L'ID de la commande créée ou false en cas d'erreur
+     * Crée une commande à partir du panier
      */
     public static function createFromCart($user_id)
     {
         $pdo = Database::getPDO();
-        
-        // Récupère les articles du panier
         $cartItems = Cart::getByUserId($user_id);
         
-        if (empty($cartItems)) {
-            return false;
-        }
+        if (empty($cartItems)) return false;
         
-        // Calcule le total
         $total = Cart::getTotalByUserId($user_id);
         
         try {
             $pdo->beginTransaction();
             
-            // Crée la commande
-            $stmt = $pdo->prepare("INSERT INTO commande (user_id, statut, total) VALUES (?, 'validee', ?)");
+            // Insertion dans 'commande' avec la date actuelle
+            $stmt = $pdo->prepare("INSERT INTO commande (user_id, statut, total, date) VALUES (?, 'validee', ?, NOW())");
             $stmt->execute([$user_id, $total]);
+            
             $orderId = $pdo->lastInsertId();
             
-            // Ajoute les produits à la commande
-            $stmt = $pdo->prepare("INSERT INTO commande_produit (commande_id, product_id, quantite, prix_unitaire) VALUES (?, ?, ?, ?)");
+            // Insertion des détails dans 'order_item'
+            $stmt = $pdo->prepare("INSERT INTO order_item (commande_id, produit_id, quantite, prix_unitaire) VALUES (?, ?, ?, ?)");
             
             foreach ($cartItems as $item) {
                 $product = Product::findById($item['id']);
@@ -195,16 +139,14 @@ class Order
                         $product['prix']
                     ]);
                     
-                    // Met à jour le stock
+                    // Mise à jour du stock
                     $newStock = $product['stock'] - $item['quantite'];
                     $updateStmt = $pdo->prepare("UPDATE produit SET stock = ? WHERE id = ?");
                     $updateStmt->execute([$newStock, $item['id']]);
                 }
             }
             
-            // Vide le panier
             Cart::clearByUserId($user_id);
-            
             $pdo->commit();
             return $orderId;
             
@@ -214,10 +156,6 @@ class Order
         }
     }
 
-    /**
-     * Met à jour le statut d'une commande
-     * @return bool
-     */
     public function update()
     {
         $pdo = Database::getPDO();
@@ -225,10 +163,6 @@ class Order
         return $stmt->execute([$this->statut, $this->total, $this->id]);
     }
 
-    /**
-     * Supprime une commande
-     * @return bool
-     */
     public function delete()
     {
         $pdo = Database::getPDO();
@@ -236,4 +170,3 @@ class Order
         return $stmt->execute([$this->id]);
     }
 }
-

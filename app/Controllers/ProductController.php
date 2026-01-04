@@ -47,6 +47,9 @@ final class ProductController extends Controller
 
     public function showCreateProductForm(): void
     {
+        // Vérifie que l'utilisateur est admin
+        $this->requireAdmin();
+        
         // Récupère toutes les catégories
         $categories = Category::getAll();
         
@@ -57,8 +60,51 @@ final class ProductController extends Controller
         ]);
     }
 
+    /**
+     * Affiche le formulaire d'édition d'un produit existant
+     */
+    public function showEditProductForm(): void
+    {
+        // Vérifie que l'utilisateur est admin
+        $this->requireAdmin();
+        
+        $id = $_GET['id'] ?? null;
+
+        if (!$id) {
+            header('Location: /products');
+            return;
+        }
+
+        $product = Product::findById($id);
+
+        if (!$product) {
+            header('Location: /products');
+            return;
+        }
+
+        $categories = Category::getAll();
+
+        $this->render('product/create-product', params: [
+            'title' => 'Modifier le produit',
+            'categories' => $categories,
+            'old_values' => [
+                'id'           => $product['id'],
+                'nom'          => $product['nom'],
+                'description'  => $product['description'] ?? '',
+                'prix'         => $product['prix'],
+                'stock'        => $product['stock'],
+                'image_url'    => $product['image_url'] ?? '',
+                'categorie_id' => $product['categorie_id'] ?? null,
+            ],
+            'is_edit' => true,
+        ]);
+    }
+
     public function createProduct(): void
     {
+        // Vérifie que l'utilisateur est admin
+        $this->requireAdmin();
+        
         // Vérifie que la méthode HTTP est POST
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             header('Location: /products/create');
@@ -146,6 +192,150 @@ final class ProductController extends Controller
                 'categories' => $categories
             ]);
         }
+    }
+
+    /**
+     * Met à jour un produit existant
+     */
+    public function updateProduct(): void
+    {
+        // Vérifie que l'utilisateur est admin
+        $this->requireAdmin();
+        
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header('Location: /products');
+            return;
+        }
+
+        $input = $_POST;
+        $id = $input['id'] ?? null;
+
+        if (!$id) {
+            header('Location: /products');
+            return;
+        }
+
+        $categories = Category::getAll();
+
+        // Validation basique similaire à createProduct
+        if (empty($input['nom']) || empty($input['prix']) || empty($input['stock'])) {
+            $this->render('product/create-product', params: [
+                'title' => 'Modifier le produit',
+                'message' => 'Les champs "nom", "prix" et "stock" sont requis.',
+                'success' => false,
+                'old_values' => $input,
+                'categories' => $categories,
+                'is_edit' => true,
+            ]);
+            return;
+        }
+
+        if (!is_numeric($input['prix']) || floatval($input['prix']) < 0) {
+            $this->render('product/create-product', params: [
+                'title' => 'Modifier le produit',
+                'message' => 'Le prix doit être un nombre positif.',
+                'success' => false,
+                'old_values' => $input,
+                'categories' => $categories,
+                'is_edit' => true,
+            ]);
+            return;
+        }
+
+        if (!is_numeric($input['stock']) || intval($input['stock']) < 0) {
+            $this->render('product/create-product', params: [
+                'title' => 'Modifier le produit',
+                'message' => 'Le stock doit être un entier positif.',
+                'success' => false,
+                'old_values' => $input,
+                'categories' => $categories,
+                'is_edit' => true,
+            ]);
+            return;
+        }
+
+        $image_url = $input['image_url'] ?? '';
+        if (!empty($image_url) && !filter_var($image_url, FILTER_VALIDATE_URL)) {
+            $this->render('product/create-product', params: [
+                'title' => 'Modifier le produit',
+                'message' => 'L\'URL de l\'image n\'est pas valide.',
+                'success' => false,
+                'old_values' => $input,
+                'categories' => $categories,
+                'is_edit' => true,
+            ]);
+            return;
+        }
+
+        $existing = Product::findById($id);
+        if (!$existing) {
+            header('Location: /products');
+            return;
+        }
+
+        $product = new Product();
+        $product->setId((int) $id);
+        $product->setNom($input['nom']);
+        $product->setDescription($input['description'] ?? '');
+        $product->setPrix(floatval($input['prix']));
+        $product->setStock(intval($input['stock']));
+        $product->setImageUrl($image_url);
+        $product->setCategorieId(!empty($input['categorie_id']) ? intval($input['categorie_id']) : null);
+
+        if ($product->update()) {
+            $this->render('product/create-product', params: [
+                'title' => 'Modifier le produit',
+                'message' => 'Produit mis à jour avec succès.',
+                'success' => true,
+                'old_values' => array_merge($input, ['id' => $id]),
+                'categories' => $categories,
+                'is_edit' => true,
+            ]);
+        } else {
+            $this->render('product/create-product', params: [
+                'title' => 'Modifier le produit',
+                'message' => 'Erreur lors de la mise à jour du produit.',
+                'success' => false,
+                'old_values' => $input,
+                'categories' => $categories,
+                'is_edit' => true,
+            ]);
+        }
+    }
+
+    /**
+     * Supprime un produit
+     */
+    public function delete(): void
+    {
+        // Vérifie que l'utilisateur est admin
+        $this->requireAdmin();
+        
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header('Location: /products');
+            return;
+        }
+
+        $id = $_POST['id'] ?? null;
+
+        if (!$id) {
+            header('Location: /products');
+            return;
+        }
+
+        $productData = Product::findById($id);
+
+        if (!$productData) {
+            header('Location: /products');
+            return;
+        }
+
+        $product = new Product();
+        $product->setId((int) $id);
+
+        $product->delete();
+
+        header('Location: /products');
     }
 }
 

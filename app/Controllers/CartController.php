@@ -15,7 +15,17 @@ final class CartController extends Controller
      */
     public function show(): void
     {
-        $user_id = $_GET['user_id'] ?? 1; // Par défaut user_id = 1 pour la démo
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+        
+        // Utilise uniquement le user_id de la session (utilisateur connecté)
+        if (!isset($_SESSION['user_id']) || empty($_SESSION['user_id'])) {
+            header('Location: /login');
+            return;
+        }
+        
+        $user_id = (int) $_SESSION['user_id'];
         
         // Ici je récupère les produits du panier de l'user authentifié
         $cartItems = Cart::getByUserId($user_id);
@@ -74,9 +84,20 @@ final class CartController extends Controller
     {
         header('Content-Type: application/json; charset=utf-8');
         
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+        
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             http_response_code(405);
             echo json_encode(['error' => 'Méthode non autorisée. Utilisez POST.'], JSON_PRETTY_PRINT);
+            return;
+        }
+        
+        // Utilise uniquement le user_id de la session (utilisateur connecté)
+        if (!isset($_SESSION['user_id']) || empty($_SESSION['user_id'])) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Non authentifié.'], JSON_PRETTY_PRINT);
             return;
         }
         
@@ -85,11 +106,13 @@ final class CartController extends Controller
             $input = $_POST;
         }
         
-        if (empty($input['user_id']) || empty($input['product_id']) || empty($input['quantite'])) {
+        if (empty($input['product_id']) || empty($input['quantite'])) {
             http_response_code(400);
-            echo json_encode(['error' => 'Les champs "user_id", "product_id" et "quantite" sont requis.'], JSON_PRETTY_PRINT);
+            echo json_encode(['error' => 'Les champs "product_id" et "quantite" sont requis.'], JSON_PRETTY_PRINT);
             return;
         }
+        
+        $user_id = (int) $_SESSION['user_id'];
         
         // Vérifie que le produit existe
         $product = Product::findById($input['product_id']);
@@ -107,7 +130,7 @@ final class CartController extends Controller
         }
         
         $cart = new Cart();
-        $cart->setUserId($input['user_id']);
+        $cart->setUserId($user_id);
         $cart->setProductId($input['product_id']);
         $cart->setQuantite($input['quantite']);
         
@@ -128,14 +151,24 @@ final class CartController extends Controller
      */
     public function addFromForm(): void
     {
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+        
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             header('Location: /products');
             return;
         }
         
+        // Utilise uniquement le user_id de la session (utilisateur connecté)
+        if (!isset($_SESSION['user_id']) || empty($_SESSION['user_id'])) {
+            header('Location: /login');
+            return;
+        }
+        
         $product_id = $_POST['product_id'] ?? null;
         $quantite = intval($_POST['quantite'] ?? 1);
-        $user_id = $_POST['user_id'] ?? $_GET['user_id'] ?? 1; // Par défaut user_id = 1 pour la démo
+        $user_id = (int) $_SESSION['user_id'];
         
         if (!$product_id) {
             header('Location: /products');
@@ -161,19 +194,29 @@ final class CartController extends Controller
         $cart->setQuantite($quantite);
         
         if ($cart->save()) {
-            header('Location: /cart?user_id=' . $user_id . '&success=added');
+            header('Location: /cart?success=added');
         } else {
             header('Location: /products/show?id=' . $product_id . '&error=add_failed');
         }
     }
 
     /**
-     * Met à jour la quantité d'un produit dans le panier
+     * Met à jour la quantité d'un produit dans le panier (session)
      */
     public function update(): void
     {
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+        
         if ($_SERVER['REQUEST_METHOD'] !== 'POST' && $_SERVER['REQUEST_METHOD'] !== 'PUT') {
             header('Location: /cart');
+            return;
+        }
+        
+        // Utilise uniquement le user_id de la session (utilisateur connecté)
+        if (!isset($_SESSION['user_id']) || empty($_SESSION['user_id'])) {
+            header('Location: /login');
             return;
         }
         
@@ -183,48 +226,55 @@ final class CartController extends Controller
         }
         
         if (empty($input['cart_id']) || empty($input['quantite'])) {
-            header('Location: /cart?user_id=' . ($_GET['user_id'] ?? 1) . '&error=missing_fields');
+            header('Location: /cart?error=missing_fields');
             return;
         }
         
-        // Récupère l'article du panier
-        $pdo = \Mini\Core\Database::getPDO();
-        $stmt = $pdo->prepare("SELECT * FROM panier WHERE id = ?");
-        $stmt->execute([$input['cart_id']]);
-        $cartItem = $stmt->fetch(\PDO::FETCH_ASSOC);
+        $user_id = (int) $_SESSION['user_id'];
+        $product_id = (int) $input['cart_id']; // cart_id est en fait le product_id dans notre système de session
+        $quantite = (int) $input['quantite'];
         
-        if (!$cartItem) {
-            header('Location: /cart?user_id=' . ($_GET['user_id'] ?? 1) . '&error=item_not_found');
+        // Vérifie le produit et le stock
+        $product = Product::findById($product_id);
+        if (!$product) {
+            header('Location: /cart?error=item_not_found');
             return;
         }
         
-        // Vérifie le stock
-        $product = Product::findById($cartItem['product_id']);
-        if ($product['stock'] < $input['quantite']) {
-            header('Location: /cart?user_id=' . $cartItem['user_id'] . '&error=stock_insuffisant');
+        if ($product['stock'] < $quantite) {
+            header('Location: /cart?error=stock_insuffisant');
             return;
         }
         
         $cart = new Cart();
-        $cart->setId($input['cart_id']);
-        $cart->setUserId($cartItem['user_id']);
-        $cart->setProductId($cartItem['product_id']);
-        $cart->setQuantite($input['quantite']);
+        $cart->setUserId($user_id);
+        $cart->setProductId($product_id);
+        $cart->setQuantite($quantite);
         
         if ($cart->save()) {
-            header('Location: /cart?user_id=' . $cartItem['user_id'] . '&success=updated');
+            header('Location: /cart?success=updated');
         } else {
-            header('Location: /cart?user_id=' . $cartItem['user_id'] . '&error=update_failed');
+            header('Location: /cart?error=update_failed');
         }
     }
 
     /**
-     * Supprime un article du panier
+     * Supprime un article du panier (session)
      */
     public function remove(): void
     {
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+        
         if ($_SERVER['REQUEST_METHOD'] !== 'DELETE' && $_SERVER['REQUEST_METHOD'] !== 'POST') {
             header('Location: /cart');
+            return;
+        }
+        
+        // Utilise uniquement le user_id de la session (utilisateur connecté)
+        if (!isset($_SESSION['user_id']) || empty($_SESSION['user_id'])) {
+            header('Location: /login');
             return;
         }
         
@@ -234,50 +284,46 @@ final class CartController extends Controller
         }
         
         $cart_id = $input['cart_id'] ?? $_GET['cart_id'] ?? null;
+        $user_id = (int) $_SESSION['user_id'];
         
         if (!$cart_id) {
-            header('Location: /cart?user_id=' . ($_GET['user_id'] ?? 1) . '&error=missing_cart_id');
+            header('Location: /cart?error=missing_cart_id');
             return;
         }
         
-        // Récupère l'article pour obtenir le user_id
-        $pdo = \Mini\Core\Database::getPDO();
-        $stmt = $pdo->prepare("SELECT user_id FROM panier WHERE id = ?");
-        $stmt->execute([$cart_id]);
-        $cartItem = $stmt->fetch(\PDO::FETCH_ASSOC);
-        $user_id = $cartItem['user_id'] ?? ($_GET['user_id'] ?? 1);
-        
-        $cart = new Cart();
-        $cart->setId($cart_id);
-        
-        if ($cart->delete()) {
-            header('Location: /cart?user_id=' . $user_id . '&success=removed');
+        if (Cart::deleteById($user_id, (int) $cart_id)) {
+            header('Location: /cart?success=removed');
         } else {
-            header('Location: /cart?user_id=' . $user_id . '&error=delete_failed');
+            header('Location: /cart?error=delete_failed');
         }
     }
 
     /**
-     * Vide le panier d'un utilisateur
+     * Vide le panier d'un utilisateur (session)
      */
     public function clear(): void
     {
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+        
         if ($_SERVER['REQUEST_METHOD'] !== 'DELETE' && $_SERVER['REQUEST_METHOD'] !== 'POST') {
             header('Location: /cart');
             return;
         }
         
-        $input = json_decode(file_get_contents('php://input'), true);
-        if ($input === null) {
-            $input = $_POST;
+        // Utilise uniquement le user_id de la session (utilisateur connecté)
+        if (!isset($_SESSION['user_id']) || empty($_SESSION['user_id'])) {
+            header('Location: /login');
+            return;
         }
         
-        $user_id = $input['user_id'] ?? $_GET['user_id'] ?? 1;
+        $user_id = (int) $_SESSION['user_id'];
         
         if (Cart::clearByUserId($user_id)) {
-            header('Location: /cart?user_id=' . $user_id . '&success=cleared');
+            header('Location: /cart?success=cleared');
         } else {
-            header('Location: /cart?user_id=' . $user_id . '&error=clear_failed');
+            header('Location: /cart?error=clear_failed');
         }
     }
 }

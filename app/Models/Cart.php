@@ -2,31 +2,20 @@
 
 namespace Mini\Models;
 
-use Mini\Core\Database;
-use PDO;
+use Mini\Models\Product;
 
+/**
+ * Gestion du panier en session (sans table SQL `panier`)
+ */
 class Cart
 {
-    private $id;
     private $user_id;
     private $product_id;
     private $quantite;
-    private $created_at;
-    private $updated_at;
 
     // =====================
     // Getters / Setters
     // =====================
-
-    public function getId()
-    {
-        return $this->id;
-    }
-
-    public function setId($id)
-    {
-        $this->id = $id;
-    }
 
     public function getUserId()
     {
@@ -35,7 +24,7 @@ class Cart
 
     public function setUserId($user_id)
     {
-        $this->user_id = $user_id;
+        $this->user_id = (int) $user_id;
     }
 
     public function getProductId()
@@ -45,7 +34,7 @@ class Cart
 
     public function setProductId($product_id)
     {
-        $this->product_id = $product_id;
+        $this->product_id = (int) $product_id;
     }
 
     public function getQuantite()
@@ -55,129 +44,169 @@ class Cart
 
     public function setQuantite($quantite)
     {
-        $this->quantite = $quantite;
-    }
-
-    public function getCreatedAt()
-    {
-        return $this->created_at;
-    }
-
-    public function setCreatedAt($created_at)
-    {
-        $this->created_at = $created_at;
-    }
-
-    public function getUpdatedAt()
-    {
-        return $this->updated_at;
-    }
-
-    public function setUpdatedAt($updated_at)
-    {
-        $this->updated_at = $updated_at;
+        $this->quantite = (int) $quantite;
     }
 
     // =====================
-    // Méthodes CRUD
+    // Méthodes "session"
     // =====================
 
-    /**
-     * Récupère tous les articles du panier d'un utilisateur
-     * @param int $user_id
-     * @return array
-     */
-    public static function getByUserId($user_id)
+    private static function ensureSessionStarted(): void
     {
-        $pdo = Database::getPDO();
-        $stmt = $pdo->prepare("
-            SELECT p.*, c.quantite, c.id as panier_id, cat.nom as categorie_nom
-            FROM panier c
-            INNER JOIN produit p ON c.product_id = p.id
-            LEFT JOIN categorie cat ON p.categorie_id = cat.id
-            WHERE c.user_id = ?
-            ORDER BY c.created_at DESC
-        ");
-        $stmt->execute([$user_id]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
-    }
-
-    /**
-     * Récupère un article du panier par user_id et product_id
-     * @param int $user_id
-     * @param int $product_id
-     * @return array|null
-     */
-    public static function findByUserAndProduct($user_id, $product_id)
-    {
-        $pdo = Database::getPDO();
-        $stmt = $pdo->prepare("SELECT * FROM panier WHERE user_id = ? AND product_id = ?");
-        $stmt->execute([$user_id, $product_id]);
-        return $stmt->fetch(PDO::FETCH_ASSOC);
-    }
-
-    /**
-     * Calcule le total du panier d'un utilisateur
-     * @param int $user_id
-     * @return float
-     */
-    public static function getTotalByUserId($user_id)
-    {
-        $pdo = Database::getPDO();
-        $stmt = $pdo->prepare("
-            SELECT SUM(p.prix * c.quantite) as total
-            FROM panier c
-            INNER JOIN produit p ON c.product_id = p.id
-            WHERE c.user_id = ?
-        ");
-        $stmt->execute([$user_id]);
-        $result = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $result['total'] ?? 0.00;
-    }
-
-    /**
-     * Ajoute ou met à jour un produit dans le panier
-     * @return bool
-     */
-    public function save()
-    {
-        $pdo = Database::getPDO();
-        
-        // Vérifie si l'article existe déjà dans le panier
-        $existing = self::findByUserAndProduct($this->user_id, $this->product_id);
-        
-        if ($existing) {
-            // Met à jour la quantité
-            $stmt = $pdo->prepare("UPDATE panier SET quantite = ? WHERE user_id = ? AND product_id = ?");
-            return $stmt->execute([$this->quantite, $this->user_id, $this->product_id]);
-        } else {
-            // Ajoute un nouvel article
-            $stmt = $pdo->prepare("INSERT INTO panier (user_id, product_id, quantite) VALUES (?, ?, ?)");
-            return $stmt->execute([$this->user_id, $this->product_id, $this->quantite]);
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
         }
     }
 
     /**
-     * Supprime un article du panier
+     * Récupère tous les articles du panier d'un utilisateur
+     * et renvoie une structure compatible avec la vue.
+     *
+     * @param int $user_id
+     * @return array
+     */
+    public static function getByUserId($user_id): array
+    {
+        self::ensureSessionStarted();
+
+        $user_id = (int) $user_id;
+        $items = $_SESSION['cart'][$user_id] ?? [];
+
+        $result = [];
+
+        foreach ($items as $productId => $data) {
+            $product = Product::findById($productId);
+            if (!$product) {
+                continue;
+            }
+
+            $product['quantite'] = (int) $data['quantite'];
+            // On utilise l'id produit comme identifiant panier
+            $product['panier_id'] = (int) $productId;
+
+            $result[] = $product;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Récupère un article du panier par user_id et product_id
+     *
+     * @param int $user_id
+     * @param int $product_id
+     * @return array|null
+     */
+    public static function findByUserAndProduct($user_id, $product_id): ?array
+    {
+        self::ensureSessionStarted();
+
+        $user_id = (int) $user_id;
+        $product_id = (int) $product_id;
+
+        if (isset($_SESSION['cart'][$user_id][$product_id])) {
+            return $_SESSION['cart'][$user_id][$product_id];
+        }
+
+        return null;
+    }
+
+    /**
+     * Calcule le total du panier d'un utilisateur
+     *
+     * @param int $user_id
+     * @return float
+     */
+    public static function getTotalByUserId($user_id): float
+    {
+        self::ensureSessionStarted();
+
+        $user_id = (int) $user_id;
+        $items = $_SESSION['cart'][$user_id] ?? [];
+
+        $total = 0.0;
+
+        foreach ($items as $productId => $data) {
+            $product = Product::findById($productId);
+            if (!$product) {
+                continue;
+            }
+
+            $total += (float) $product['prix'] * (int) $data['quantite'];
+        }
+
+        return $total;
+    }
+
+    /**
+     * Ajoute ou met à jour un produit dans le panier (session)
+     *
      * @return bool
      */
-    public function delete()
+    public function save(): bool
     {
-        $pdo = Database::getPDO();
-        $stmt = $pdo->prepare("DELETE FROM panier WHERE id = ?");
-        return $stmt->execute([$this->id]);
+        self::ensureSessionStarted();
+
+        if ($this->user_id === null || $this->product_id === null) {
+            return false;
+        }
+
+        if (!isset($_SESSION['cart'][$this->user_id])) {
+            $_SESSION['cart'][$this->user_id] = [];
+        }
+
+        $_SESSION['cart'][$this->user_id][$this->product_id] = [
+            'product_id' => $this->product_id,
+            'quantite'   => $this->quantite,
+        ];
+
+        return true;
+    }
+
+    /**
+     * Supprime un article du panier pour un utilisateur donné.
+     * Ici, "panier_id" est équivalent à product_id.
+     *
+     * @param int $user_id
+     * @param int $panier_id
+     * @return bool
+     */
+    public static function deleteById(int $user_id, int $panier_id): bool
+    {
+        self::ensureSessionStarted();
+
+        if (isset($_SESSION['cart'][$user_id][$panier_id])) {
+            unset($_SESSION['cart'][$user_id][$panier_id]);
+
+            if (empty($_SESSION['cart'][$user_id])) {
+                unset($_SESSION['cart'][$user_id]);
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     /**
      * Vide le panier d'un utilisateur
+     *
      * @param int $user_id
      * @return bool
      */
-    public static function clearByUserId($user_id)
+    public static function clearByUserId($user_id): bool
     {
-        $pdo = Database::getPDO();
-        $stmt = $pdo->prepare("DELETE FROM panier WHERE user_id = ?");
-        return $stmt->execute([$user_id]);
+        self::ensureSessionStarted();
+
+        $user_id = (int) $user_id;
+
+        if (isset($_SESSION['cart'][$user_id])) {
+            unset($_SESSION['cart'][$user_id]);
+        }
+
+        return true;
     }
 }
+
+
 

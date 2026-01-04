@@ -1,6 +1,6 @@
 <!-- Formulaire pour créer un nouveau produit -->
 <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-    <h2>Ajouter un nouveau produit</h2>
+    <h2><?= isset($is_edit) && $is_edit ? 'Modifier un produit' : 'Ajouter un nouveau produit' ?></h2>
     
     <!-- Message de succès ou d'erreur -->
     <?php if (isset($message)): ?>
@@ -11,7 +11,10 @@
         </div>
     <?php endif; ?>
     
-    <form method="POST" action="/products" style="display: flex; flex-direction: column; gap: 15px;">
+    <form method="POST" action="<?= isset($is_edit) && $is_edit ? '/products/update' : '/products' ?>" style="display: flex; flex-direction: column; gap: 15px;">
+        <?php if (isset($is_edit) && $is_edit && !empty($old_values['id'])): ?>
+            <input type="hidden" name="id" value="<?= htmlspecialchars($old_values['id']) ?>">
+        <?php endif; ?>
         <div>
             <label for="nom" style="display: block; margin-bottom: 5px; font-weight: bold;">Nom du produit :</label>
             <input 
@@ -118,7 +121,7 @@
             type="submit" 
             style="padding: 10px 20px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px;"
         >
-            Créer le produit
+            <?= isset($is_edit) && $is_edit ? 'Mettre à jour le produit' : 'Créer le produit' ?>
         </button>
     </form>
     
